@@ -1,32 +1,31 @@
-from pathlib import Path
+from __future__ import annotations
 
-from dotenv import load_dotenv
-from loguru import logger
+from dataclasses import dataclass, field
+from typing import Callable, Optional
 
-# Load environment variables from .env file if it exists
-load_dotenv()
+from .optim import DiffAdam, DifferentiableOptimizer
 
-# Paths
-PROJ_ROOT = Path(__file__).resolve().parents[1]
-logger.info(f"PROJ_ROOT path is: {PROJ_ROOT}")
 
-DATA_DIR = PROJ_ROOT / "data"
-RAW_DATA_DIR = DATA_DIR / "raw"
-INTERIM_DATA_DIR = DATA_DIR / "interim"
-PROCESSED_DATA_DIR = DATA_DIR / "processed"
-EXTERNAL_DATA_DIR = DATA_DIR / "external"
-
-MODELS_DIR = PROJ_ROOT / "models"
-
-REPORTS_DIR = PROJ_ROOT / "reports"
-FIGURES_DIR = REPORTS_DIR / "figures"
-
-# If tqdm is installed, configure loguru with tqdm.write
-# https://github.com/Delgan/loguru/issues/135
-try:
-    from tqdm import tqdm
-
-    logger.remove(0)
-    logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
-except ModuleNotFoundError:
-    pass
+@dataclass
+class DataRaterConfig:
+    # --- population of inner models (paper: 8 x 400M) ---
+    num_inner_models: int = 4
+    # --- inner loop ---
+    inner_steps: int = 2  # T: inner updates per outer step (Alg.1 line 14)
+    unroll_window: int = 2  # last W inner steps are differentiated through
+    # (paper: 2; they found 1/2/4/8 similar).
+    # Must satisfy 1 <= unroll_window <= inner_steps.
+    inner_optimizer: Callable[[], DifferentiableOptimizer] = field(
+        default_factory=lambda: DiffAdam(lr=1e-3)
+    )
+    # --- outer loop ---
+    meta_lr: float = 1e-3
+    meta_weight_decay: float = 0.0
+    meta_grad_clip: Optional[float] = None
+    # --- inner-model lifetimes ---
+    # Re-initialise each inner model every `reset_every` meta-steps so the
+    # DataRater sees ALL stages of training (not just one) and generalises to
+    # fresh models. Initial ages are staggered so resets don't coincide
+    # ("stratified lifetimes", paper Fig. 12).
+    reset_every: Optional[int] = 1000
+    stagger_resets: bool = True

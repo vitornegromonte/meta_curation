@@ -4,6 +4,7 @@ pip
 pytest
 python-dotenv
 ruff
+torch>=2.1
 tqdm
 typer
 -e .

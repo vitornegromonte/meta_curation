@@ -41,20 +41,20 @@ A short description of the project.
 │
 └── meta_curation   <- Source code for use in this project.
     │
-    ├── __init__.py             <- Makes meta_curation a Python module
+    ├── __init__.py             <- Re-exports public DataRater API
     │
-    ├── config.py               <- Store useful variables and configuration
+    ├── types.py                <- Shared aliases (ParamDict, Batch, ...)
+    ├── config.py               <- DataRaterConfig (§3 of single-file.py)
+    ├── optim.py                <- Differentiable inner optimisers (§1)
+    ├── meta_optim.py           <- MetaAdam meta-optimiser (§2)
+    ├── trainer.py              <- DataRaterTrainer, Algorithm 1 (§4)
+    ├── filtering.py            <- Top-K / CDF filtering utilities (§5)
+    ├── demo.py                 <- Toy demo (§7, `python -m meta_curation.demo`)
+    ├── single-file.py          <- Reference single-file implementation (kept as reference)
     │
-    ├── dataset.py              <- Scripts to download or generate data
-    │
-    ├── features.py             <- Code to create features for modeling
-    │
-    ├── modeling                
-    │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
-    │
-    └── plots.py                <- Code to create visualizations
+    └── modeling
+        ├── __init__.py
+        └── models.py           <- Example DataRater nets (§6)
 ```
 
 --------
