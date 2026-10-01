@@ -1,10 +1,10 @@
 """
-MixFlow-MG: mixed-mode differentiation for meta-gradients 
+MixFlow-MG: mixed-mode differentiation for meta-gradients
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Tuple
+from typing import Callable, Tuple
 
 import torch
 from torch import Tensor
@@ -12,7 +12,8 @@ from torch.autograd.function import once_differentiable
 from torch.func import grad as func_grad
 from torch.func import jvp as func_jvp
 
-ParamDict = Dict[str, Tensor]
+from .types import ParamDict
+
 LossFn = Callable[[ParamDict, Tensor], Tensor]  # (params, eta) -> scalar loss
 
 
@@ -86,15 +87,19 @@ def fwdrev_grad(loss_fn: LossFn, params: ParamDict, eta: Tensor) -> ParamDict:
 
 
 # Self-test: mixed-mode meta-gradient must equal the default implementation.
-# Run:  python mixflow.py
+# Run:  python -m meta_curation.mixflow
 def _selftest(T: int = 3, B: int = 16, D: int = 5, H: int = 7, seed: int = 0):
     torch.manual_seed(seed)
     dt = torch.float64  # float64 so that the comparison is tight
     X = torch.randn(T, B, D, dtype=dt)
     Y = torch.randn(T, B, 1, dtype=dt)
     Xv, Yv = torch.randn(32, D, dtype=dt), torch.randn(32, 1, dtype=dt)
-    theta0 = {"W1": torch.randn(D, H, dtype=dt) * 0.5, "b1": torch.zeros(H, dtype=dt),
-              "W2": torch.randn(H, 1, dtype=dt) * 0.5, "b2": torch.zeros(1, dtype=dt)}
+    theta0 = {
+        "W1": torch.randn(D, H, dtype=dt) * 0.5,
+        "b1": torch.zeros(H, dtype=dt),
+        "W2": torch.randn(H, 1, dtype=dt) * 0.5,
+        "b2": torch.zeros(1, dtype=dt),
+    }
     eta_net = torch.nn.Linear(D + 1, 1).to(dt)  # a tiny "DataRater"
 
     def predict(p, x):
@@ -112,12 +117,11 @@ def _selftest(T: int = 3, B: int = 16, D: int = 5, H: int = 7, seed: int = 0):
                 return (torch.softmax(s, 0) * per_ex).sum()
 
             if mode == "reverse":
-                gl = torch.autograd.grad(loss_fn(p, scores), list(p.values()),
-                                         create_graph=True)
+                gl = torch.autograd.grad(loss_fn(p, scores), list(p.values()), create_graph=True)
                 g = dict(zip(p.keys(), gl))
             else:
                 g = fwdrev_grad(loss_fn, p, scores)
-            mom = {k: 0.9 * mom[k] + g[k] for k in p}          # SGD + momentum
+            mom = {k: 0.9 * mom[k] + g[k] for k in p}  # SGD + momentum
             p = {k: p[k] - 0.1 * mom[k] for k in p}
         outer = (predict(p, Xv) - Yv).pow(2).mean()
         gs = torch.autograd.grad(outer, list(eta_net.parameters()))
