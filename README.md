@@ -4,58 +4,112 @@
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-A short description of the project.
+## Smoke test
 
-## Project Organization
+Requer `torch>=2.1` (CPU basta). Cada comando roda em ~1 min e
+verifica o próprio sucesso:
+
+```bash
+pytest tests -q                          # testes unitários (otimizadores, filtragem)
+python -m meta_curation.mixflow          # meta-gradiente em modo misto == modo reverso
+python -m meta_curation.nara_adapter --meta-steps 2 --out-dir /tmp/smoke_adapter
+python -m meta_curation.nara_phase2 --n-synth 800 --meta-steps 2 --out-dir /tmp/smoke_p2
+```
+
+Execuções completas (resultados de referência em `reports/`): remova as
+flags de smoke, ex.
+`python -m meta_curation.nara_phase2 --meta-steps 600` reproduz o
+confronto DataRater-vs-DataIQ no pool sintético de parkinson
+(`reports/nara_phase2/run.pt`).
+
+## Resultados de referência
+
+Parkinson, MSE de teste do modelo final (unidades de y padronizado, 3 seeds
+de avaliação). Execuções completas:
+
+Fase 1 — 30% de rótulos corrompidos, 600 meta-passos, keep 0.7
+(`reports/nara_parkinson_noisy600/run.pt`):
+
+| full | curated | random | noisy kept |
+|---|---|---|---|
+| 0.172 | 0.170 | 0.251 | 30.6% → 20.4% |
+
+Fase 1 — rótulos limpos, 300 meta-passos, keep 0.75
+(`reports/nara_parkinson_clean300/run.pt`): full 0.014, curated 0.056,
+random 0.015. Podar exemplos difíceis-mas-limpos prejudica — curadoria é para
+pools sujos, não para os limpos.
+
+Fase 2 — pool sintético (8000 linhas, 30% de lixo), 600 meta-passos
+(`reports/nara_phase2/run.pt`), corr(score, junk) = −0.77:
+
+| braço | kept | junk-in-kept | test MSE |
+|---|---|---|---|
+| dataiq-lr (caminho exato do nara) | 8000 | 0.300 | 0.060 |
+| dataiq-mlp | 8000 | 0.300 | 0.062 |
+| datarater (mesmo orçamento) | 8000 | 0.300 | 0.058 |
+| **datarater70** (keep 0.7) | 5600 | **0.063** | **0.037** |
+| random70 (keep 0.7) | 5600 | 0.299 | 0.066 |
+
+O Data-IQ como codificado não encontra nenhuma linha hard aqui (seus cortes
+0.25/0.75 são limiares da era de classificação aplicados a valores-alvo
+brutos), então mantém tudo; com orçamentos de keep iguais, o DataRater remove
+~80% do lixo e quase reduz à metade o MSE de teste vs aleatório.
+
+As execuções de smoke imprimem o mesmo formato de saída em escala mínima
+(2 meta-passos); os valores exatos têm semente fixa, mas o que importa ali é
+exit-0 + `run.pt`.
+
+## Organização do Projeto
 
 ```
-├── LICENSE            <- Open-source license if one is chosen
-├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers using this project.
+├── Makefile           <- Makefile com comandos de conveniência como `make data` ou `make train`
+├── README.md          <- O README principal para desenvolvedores usando este projeto.
 ├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
+│   ├── external       <- Dados de fontes externas.
+│   ├── interim        <- Dados intermediários que já foram transformados.
+│   ├── processed      <- Os conjuntos de dados finais e canônicos para modelagem.
+│   └── raw            <- O despejo original e imutável dos dados.
 │
-├── docs               <- A default mkdocs project; see www.mkdocs.org for details
+├── docs               <- Um projeto mkdocs padrão; ver www.mkdocs.org para detalhes
 │
-├── models             <- Trained and serialized models, model predictions, or model summaries
+├── models             <- Modelos treinados e serializados, predições ou resumos de modelos
 │
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
+├── notebooks          <- Jupyter notebooks. A convenção de nome é um número (para ordenação),
+│                         as iniciais do criador e uma descrição curta separada por `-`, ex.
 │                         `1.0-jqp-initial-data-exploration`.
 │
-├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         meta_curation and configuration for tools like black
+├── pyproject.toml     <- Arquivo de configuração do projeto com metadados do pacote
+│                         meta_curation e configuração de ferramentas como black
 │
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
+├── references         <- Dicionários de dados, manuais e todo outro material explicativo.
 │
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
+├── reports            <- Análises geradas como HTML, PDF, LaTeX, etc.
+│   └── figures        <- Gráficos e figuras gerados para uso nos relatórios
 │
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
+├── requirements.txt   <- O arquivo de requirements para reproduzir o ambiente de análise, ex.
+│                         gerado com `pip freeze > requirements.txt`
 │
-├── setup.cfg          <- Configuration file for flake8
+├── setup.cfg          <- Arquivo de configuração para flake8
 │
-└── meta_curation   <- Source code for use in this project.
+└── meta_curation   <- Código-fonte para uso neste projeto.
     │
-    ├── __init__.py             <- Re-exports public DataRater API
+    ├── __init__.py             <- Re-exporta a API pública do DataRater
     │
-    ├── types.py                <- Shared aliases (ParamDict, Batch, ...)
-    ├── config.py               <- DataRaterConfig (§3 of single-file.py)
-    ├── optim.py                <- Differentiable inner optimisers (§1)
-    ├── meta_optim.py           <- MetaAdam meta-optimiser (§2)
-    ├── trainer.py              <- DataRaterTrainer, Algorithm 1 (§4)
-    ├── filtering.py            <- Top-K / CDF filtering utilities (§5)
-    ├── demo.py                 <- Toy demo (§7, `python -m meta_curation.demo`)
-    ├── single-file.py          <- Reference single-file implementation (kept as reference)
+    ├── types.py                <- Aliases compartilhados (ParamDict, Batch, ...)
+    ├── config.py               <- DataRaterConfig (§3 do single-file.py)
+    ├── optim.py                <- Otimizadores internos diferenciáveis (§1)
+    ├── meta_optim.py           <- Meta-otimizador MetaAdam (§2)
+    ├── trainer.py              <- DataRaterTrainer, Algoritmo 1 (§4)
+    ├── filtering.py            <- Utilitários de filtragem Top-K / CDF (§5)
+    ├── demo.py                 <- Demo toy (§7, `python -m meta_curation.demo`)
+    ├── mixflow.py              <- Meta-gradientes em modo misto (fwd-over-rev)
+    ├── nara_adapter.py         <- Curadoria DataRater para dados tabulares do artigo da Maynara (Fase 1)
+    ├── nara_phase2.py          <- Confronto DataRater-vs-DataIQ em pools sintéticos
+    ├── single-file.py          <- Implementação de referência em arquivo único (mantida como referência)
     │
     └── modeling
         ├── __init__.py
-        └── models.py           <- Example DataRater nets (§6)
+        └── models.py           <- Redes DataRater de exemplo (§6)
 ```
 
 --------
-
