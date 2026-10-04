@@ -82,6 +82,7 @@ def main():
     ap.add_argument("--inner-steps", type=int, default=2)
     ap.add_argument("--eval-seeds", type=int, default=3)
     ap.add_argument("--noise-frac", type=float, default=0.0)
+    ap.add_argument("--implicit", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-dir", default="reports/nara_parkinson")
     args = ap.parse_args()
@@ -124,15 +125,30 @@ def main():
             return self.r(rater_in(b))
 
     wrapped = _Wrap(rater)
-    cfg = DataRaterConfig(
-        num_inner_models=args.inner_models,
-        inner_steps=args.inner_steps,
-        unroll_window=min(2, args.inner_steps),
-        inner_optimizer=lambda: DiffAdam(lr=1e-2),  # noqa: E731
-        meta_lr=3e-3,
-        reset_every=200,
-    )
-    trainer = DataRaterTrainer(
+    if args.implicit:
+        from .config import ImplicitRaterConfig
+        from .trainer import ImplicitDataRaterTrainer
+
+        cfg = ImplicitRaterConfig(
+            num_inner_models=args.inner_models,
+            inner_steps=100,
+            inner_lr=1e-2,
+            proximal_lambda=1.0,
+            meta_lr=3e-3,
+            reset_every=200,
+        )
+        trainer_cls = ImplicitDataRaterTrainer
+    else:
+        cfg = DataRaterConfig(
+            num_inner_models=args.inner_models,
+            inner_steps=args.inner_steps,
+            unroll_window=min(2, args.inner_steps),
+            inner_optimizer=lambda: DiffAdam(lr=1e-2),  # noqa: E731
+            meta_lr=3e-3,
+            reset_every=200,
+        )
+        trainer_cls = DataRaterTrainer
+    trainer = trainer_cls(
         wrapped,
         mlp_factory(D),
         mse,

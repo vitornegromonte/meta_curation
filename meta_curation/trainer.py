@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.func import functional_call
 import torch.nn as nn
 
-from .config import DataRaterConfig
+from .config import DataRaterConfig, ImplicitRaterConfig
 from .meta_optim import MetaAdam
 from .optim import _detach_state
 from .types import ApplyFn, Batch, ParamDict, PerExampleLoss
@@ -181,6 +181,86 @@ class DataRaterTrainer:
             gnorms.append(float(torch.sqrt(sum((g**2).sum() for g in grads))))
 
         # (line 11) eta_{k+1} = mean_i  eta-bar^i   (average of per-model updates)
+        with torch.no_grad():
+            n = len(self.population)
+            for p, ds in zip(eta, deltas_sum):
+                p.add_(ds / n)
+
+        self.meta_steps += 1
+        return {
+            "outer_loss": sum(outer_losses) / n,
+            "meta_grad_norm": sum(gnorms) / n,
+        }
+
+
+class ImplicitDataRaterTrainer(DataRaterTrainer):
+    """iMAML-style DataRater training (see `implicit.py`).
+
+    Same population / resets / per-model MetaAdam averaging as the explicit
+    path, but the meta-gradient comes from the implicit theorem at a
+    proximal stationary point instead of backprop through unrolled steps.
+    `_InnerModel.opt_state` is unused here (kept only so resets work).
+    """
+
+    def __init__(
+        self,
+        rater: nn.Module,
+        model_factory: Callable[[], nn.Module],
+        inner_loss_fn: PerExampleLoss,
+        outer_loss_fn: PerExampleLoss,
+        inner_sampler: Callable[[], Batch],
+        outer_sampler: Callable[[], Batch],
+        config: ImplicitRaterConfig = ImplicitRaterConfig(),
+        device: str | torch.device = "cpu",
+    ):
+        super().__init__(
+            rater,
+            model_factory,
+            inner_loss_fn,
+            outer_loss_fn,
+            inner_sampler,
+            outer_sampler,
+            config=config,
+            device=device,
+        )
+        from .implicit import ConjugateGradientSolver
+
+        self.solver = ConjugateGradientSolver(
+            iters=config.cg_iters, tol=config.cg_tol, damping=config.cg_damping
+        )
+
+    def meta_step(self) -> Dict[str, float]:
+        """One implicit outer iteration."""
+        from .implicit import implicit_update
+
+        eta = list(self.rater.parameters())
+        deltas_sum = [torch.zeros_like(p) for p in eta]
+        outer_losses, gnorms = [], []
+        cfg = self.cfg
+
+        for i, m in enumerate(self.population):
+            if cfg.reset_every and m.age >= cfg.reset_every:
+                m.module = self.model_factory().to(self.device)
+                m.reset_state()
+
+            new_params, grads, outer_loss = implicit_update(
+                self,
+                m,
+                eta,
+                self.solver,
+                cfg.inner_steps,
+                cfg.inner_lr,
+                cfg.proximal_lambda,
+            )
+            d = self.meta_opts[i].delta(eta, grads)
+            for acc, di in zip(deltas_sum, d):
+                acc += di
+
+            m.params = {k: v.detach() for k, v in new_params.items()}
+            m.age += 1
+            outer_losses.append(outer_loss)
+            gnorms.append(float(torch.sqrt(sum((g**2).sum() for g in grads))))
+
         with torch.no_grad():
             n = len(self.population)
             for p, ds in zip(eta, deltas_sum):
