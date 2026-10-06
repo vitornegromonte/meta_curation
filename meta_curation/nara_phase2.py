@@ -56,10 +56,11 @@ def make_synth_pool(X, y, n_synth: int, junk_frac: float, seed: int = 0):
     return Xs, ys, is_junk
 
 
-def dataiq_stratify(X_np, y_np, model_fn, epochs: int = 10, seed: int = 0):
-    """Port of nara fit_dataiq_sk + stratify_samples (percentile path, p50).
+def dataiq_dynamics(X_np, y_np, model_fn, epochs: int = 10, seed: int = 0):
+    """Training dynamics only (nara fit_dataiq_sk): per-epoch predictions.
 
-    Returns (easy_idx, ambig_idx, hard_idx) with keep = easy + ambiguous.
+    Returns (aleatoric, confidence). Stratification is separate so grids
+    over cutoffs reuse the same dynamics (free).
     """
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X_np)
@@ -72,13 +73,45 @@ def dataiq_stratify(X_np, y_np, model_fn, epochs: int = 10, seed: int = 0):
         clf.fit(Xs[tr], y_np[tr])
         preds.append(clf.predict(Xs))
     P = np.stack(preds, axis=1)
-    aleatoric = P.var(axis=1)
-    confidence = P.mean(axis=1)
+    return P.var(axis=1), P.mean(axis=1)
+
+
+def dataiq_stratify(X_np, y_np, model_fn, epochs: int = 10, seed: int = 0):
+    """Port of nara fit_dataiq_sk + stratify_samples (percentile path, p50).
+
+    Returns (easy_idx, ambig_idx, hard_idx) with keep = easy + ambiguous.
+    """
+    aleatoric, confidence = dataiq_dynamics(X_np, y_np, model_fn, epochs, seed)
     below = aleatoric <= np.percentile(aleatoric, 50)
     hard = np.where((confidence <= 0.25) & below)[0]
     easy = np.where((confidence >= 0.75) & below)[0]
-    ambig = np.setdiff1d(np.arange(n), np.concatenate([hard, easy]))
+    ambig = np.setdiff1d(np.arange(len(confidence)), np.concatenate([hard, easy]))
     return easy, ambig, hard
+
+
+def tune_dataiq_keep(aleatoric, confidence, target_keep: int, seed: int = 0):
+    """Grid over Data-IQ's own stratification knobs to hit a keep budget.
+
+    Absolute 0.25/0.75 cutoffs are classification leftovers meaningless on raw
+    regression targets, so the grid uses confidence QUANTILES (alpha) + the
+    aleatoric percentile gate (beta) — same structure, tuned per dataset.
+    Uses only the pool itself (no junk labels, no test labels). Returns
+    (keep_idx, (alpha, beta, keep_n)).
+    """
+    n = len(confidence)
+    best = None
+    alphas = [round(0.05 * i, 2) for i in range(2, 11)]  # 0.10 .. 0.50
+    for alpha in alphas:
+        q = np.quantile(confidence, alpha)
+        for beta in range(10, 100, 10):
+            below = aleatoric <= np.percentile(aleatoric, beta)
+            hard = np.where((confidence <= q) & below)[0]
+            keep_n = n - len(hard)
+            if best is None or abs(keep_n - target_keep) < abs(best[2] - target_keep):
+                best = (hard, alpha, beta, keep_n)
+    hard, alpha, beta, keep_n = best
+    keep = np.setdiff1d(np.arange(n), hard)
+    return keep, (alpha, beta, keep_n)
 
 
 def main():
@@ -179,6 +212,17 @@ def main():
     n_keep = min(len(v) for v in arms.values())
     print(f"common keep count: {n_keep}")
     arms = {k: v[:n_keep] for k, v in arms.items()}  # easy-first truncation
+    # Fixed aggressive budget pair (independent of Data-IQ's keep count).
+    n_fix = int(0.7 * len(Xs))
+    # Tuned Data-IQ: same LinearRegression dynamics, grid over (alpha, beta)
+    # to hit the n_fix budget (pool only — no junk/test labels).
+    ale, conf = dataiq_dynamics(Xn, yn, LinearRegression, epochs=10, seed=args.seed)
+    tuned_keep, (alpha, beta, tuned_n) = tune_dataiq_keep(ale, conf, n_fix, seed=args.seed)
+    arms["dataiq-tuned"] = tuned_keep
+    print(
+        f"dataiq-tuned: alpha {alpha} beta {beta} -> keep {tuned_n} "
+        f"junk-in-kept {is_junk.numpy()[tuned_keep].mean():.3f}"
+    )
     with torch.no_grad():
         scores = wrapped((Xs, ys))
     _, dr_idx = torch.topk(scores, k=n_keep)
@@ -191,6 +235,10 @@ def main():
     g = torch.Generator().manual_seed(1)
     arms["random"] = torch.randperm(len(Xs), generator=g)[:n_keep].numpy()
     arms["random70"] = torch.randperm(len(Xs), generator=g)[:n_fix].numpy()
+    # Budget-matched pair at whatever the tuner achieved (fair fight).
+    _, drT = torch.topk(scores, k=len(tuned_keep))
+    arms["dataraterT"] = drT.numpy()
+    arms["randomT"] = torch.randperm(len(Xs), generator=g)[: len(tuned_keep)].numpy()
     for name, idx in arms.items():
         print(f"{name:10s} keep {len(idx):5d} junk-in-kept {is_junk.numpy()[idx].mean():.3f}")
 
