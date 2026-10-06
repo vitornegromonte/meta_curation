@@ -75,6 +75,7 @@ def train_eval_mlp(Xtr, ytr, Xte, yte, steps: int = 2000, bs: int = 512, seed: i
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", default="nara/datasets/prepared/parkinson")
+    ap.add_argument("--dataset", default="parkinson")
     ap.add_argument("--meta-steps", type=int, default=200)
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--keep", type=float, default=0.75)
@@ -87,8 +88,8 @@ def main():
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
-    _, Xtr_raw, ytr_raw = load_csv(os.path.join(args.data_root, "parkinson_train.csv"))
-    _, Xte_raw, yte_raw = load_csv(os.path.join(args.data_root, "parkinson_test.csv"))
+    _, Xtr_raw, ytr_raw = load_csv(os.path.join(args.data_root, f"{args.dataset}_train.csv"))
+    _, Xte_raw, yte_raw = load_csv(os.path.join(args.data_root, f"{args.dataset}_test.csv"))
     D = Xtr_raw.shape[1]
     print(f"train {tuple(Xtr_raw.shape)} test {tuple(Xte_raw.shape)} D={D}")
 

@@ -84,6 +84,7 @@ def dataiq_stratify(X_np, y_np, model_fn, epochs: int = 10, seed: int = 0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", default="nara/datasets/prepared/parkinson")
+    ap.add_argument("--dataset", default="parkinson")
     ap.add_argument("--n-synth", type=int, default=8000)
     ap.add_argument("--junk-frac", type=float, default=0.3)
     ap.add_argument("--meta-steps", type=int, default=600)
@@ -93,8 +94,8 @@ def main():
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
-    _, Xtr_raw, ytr_raw = load_csv(os.path.join(args.data_root, "parkinson_train.csv"))
-    _, Xte_raw, yte_raw = load_csv(os.path.join(args.data_root, "parkinson_test.csv"))
+    _, Xtr_raw, ytr_raw = load_csv(os.path.join(args.data_root, f"{args.dataset}_train.csv"))
+    _, Xte_raw, yte_raw = load_csv(os.path.join(args.data_root, f"{args.dataset}_test.csv"))
     D = Xtr_raw.shape[1]
 
     (Xi_raw, yi_raw), (Xo_raw, yo_raw) = split_inner_outer(Xtr_raw, ytr_raw, seed=args.seed)
