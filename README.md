@@ -24,18 +24,22 @@ Ou deixe o script criar tudo: `./scripts/compare_with_nara.sh --setup-env`
 # confronto DataRater vs Data-IQ do NARA no parkinson (fase 2)
 ./scripts/compare_with_nara.sh --dataset parkinson --meta-steps 600
 
-# outro dataset + inclui fase 1 (curadoria dos dados reais)
-./scripts/compare_with_nara.sh --dataset cholesterol --phase1 --meta-steps 300
+# outro dataset (fase 1 + fase 2 por padrão; --no-phase1 pula a fase 1)
+./scripts/compare_with_nara.sh --dataset cholesterol --meta-steps 300
+
+# todos os datasets de nara/datasets/prepared + tabela comparativa agregada
+./scripts/compare_with_nara.sh --all --meta-steps 600   # ~30 min em CPU
 
 # versão rápida (~2 min) para validar a fiação
 ./scripts/compare_with_nara.sh --dataset parkinson --meta-steps 2 --n-synth 800 --out-dir /tmp/quick
 ```
 
 Flags: `--dataset` (parkinson|cholesterol|diabetes|fat|plasma|urinary),
-`--meta-steps`, `--n-synth`, `--junk-frac`, `--out-dir`, `--phase1`,
-`--setup-env`, `--python`. Datasets com <500 linhas emitem aviso
-(meta-aprendizado fica ruidoso). Saída: `<out-dir>/phase2/run.pt`,
-`phase2.log`, `summary.txt` (tabela comparativa).
+`--all`, `--meta-steps`, `--n-synth`, `--junk-frac`, `--out-dir`,
+`--no-phase1`, `--setup-env`, `--python`. Datasets com <500 linhas emitem aviso
+(meta-aprendizado fica ruidoso). Saída por dataset:
+`<out-dir>/<dataset>/phase2/run.pt`, logs, mais `combined_summary.txt`
+(com `--all`) ou `summary.txt` (dataset único) com a tabela comparativa.
 
 ### 3. Comandos diretos (módulos)
 
