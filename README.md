@@ -4,6 +4,59 @@
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
+## Guia de execução
+
+### 1. Ambiente
+
+Só CPU basta. Com venv própria:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install numpy scikit-learn pytest
+```
+
+Ou deixe o script criar tudo: `./scripts/compare_with_nara.sh --setup-env`
+(cria `.venv-fulltest/` e usa automaticamente).
+
+### 2. Teste completo em um dataset (recomendado)
+
+```bash
+# confronto DataRater vs Data-IQ do NARA no parkinson (fase 2)
+./scripts/compare_with_nara.sh --dataset parkinson --meta-steps 600
+
+# outro dataset + inclui fase 1 (curadoria dos dados reais)
+./scripts/compare_with_nara.sh --dataset cholesterol --phase1 --meta-steps 300
+
+# versão rápida (~2 min) para validar a fiação
+./scripts/compare_with_nara.sh --dataset parkinson --meta-steps 2 --n-synth 800 --out-dir /tmp/quick
+```
+
+Flags: `--dataset` (parkinson|cholesterol|diabetes|fat|plasma|urinary),
+`--meta-steps`, `--n-synth`, `--junk-frac`, `--out-dir`, `--phase1`,
+`--setup-env`, `--python`. Datasets com <500 linhas emitem aviso
+(meta-aprendizado fica ruidoso). Saída: `<out-dir>/phase2/run.pt`,
+`phase2.log`, `summary.txt` (tabela comparativa).
+
+### 3. Comandos diretos (módulos)
+
+```bash
+pytest tests -q                          # testes unitários
+python -m meta_curation.mixflow          # self-test do modo misto
+python -m meta_curation.implicit          # paridade explícito-vs-implícito
+python -m meta_curation.nara_adapter --dataset parkinson --noise-frac 0.3 --keep 0.7
+python -m meta_curation.nara_adapter --implicit --noise-frac 0.3 --keep 0.7   # via iMAML
+python -m meta_curation.nara_phase2 --dataset parkinson --meta-steps 600
+```
+
+`--implicit` troca o meta-gradiente desenrolado pelo implícito (módulo
+`implicit.py`, branch `feat/implicit-metagrad`).
+
+### 4. O que cada artefato contém
+
+`run.pt`: `scores` do rater, máscara de junk/ruído (só diagnóstico),
+índices kept por braço, `test_mse` por braço e `args`. `summary.txt` é a
+mesma tabela em texto.
+
 ## Smoke test
 
 Requer `torch>=2.1` (CPU basta). Cada comando roda em ~1 min e
@@ -64,6 +117,11 @@ exit-0 + `run.pt`.
 ```
 ├── Makefile           <- Makefile com comandos de conveniência como `make data` ou `make train`
 ├── README.md          <- O README principal para desenvolvedores usando este projeto.
+├── scripts
+│   └── compare_with_nara.sh  <- Teste completo: DataRater vs Data-IQ do NARA
+│
+├── tests                <- Testes unitários (pytest)
+│
 ├── data
 │   ├── external       <- Dados de fontes externas.
 │   ├── interim        <- Dados intermediários que já foram transformados.
@@ -103,6 +161,7 @@ exit-0 + `run.pt`.
     ├── filtering.py            <- Utilitários de filtragem Top-K / CDF (§5)
     ├── demo.py                 <- Demo toy (§7, `python -m meta_curation.demo`)
     ├── mixflow.py              <- Meta-gradientes em modo misto (fwd-over-rev)
+    ├── implicit.py             <- Meta-gradientes implícitos estilo iMAML
     ├── nara_adapter.py         <- Curadoria DataRater para dados tabulares do artigo da Maynara (Fase 1)
     ├── nara_phase2.py          <- Confronto DataRater-vs-DataIQ em pools sintéticos
     ├── single-file.py          <- Implementação de referência em arquivo único (mantida como referência)
